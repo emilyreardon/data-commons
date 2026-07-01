@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Public Art & Voter Turnout in NYC</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; background: #0d1a0d; color: #fff; font-family: 'Helvetica Neue', Arial, sans-serif; }
+
+    #header {
+      background: #111;
+      border-bottom: 1px solid #2a2a2a;
+      padding: 14px 20px 10px;
+      position: relative;
+      z-index: 500;
+    }
+    #header h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #fff;
+    }
+    #header p {
+      font-size: 0.72rem;
+      color: #888;
+      margin-top: 4px;
+      letter-spacing: 0.02em;
+    }
+
+    #body {
+      display: flex;
+      height: calc(100vh - 62px);
+    }
+
+    #panel {
+      width: 280px;
+      flex-shrink: 0;
+      background: rgba(10,10,10,0.95);
+      border-right: 1px solid #2a2a2a;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #panel-head {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid #2a2a2a;
+      flex-shrink: 0;
+    }
+    #panel-head h2 {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #fff;
+    }
+    #panel-head p {
+      font-size: 0.65rem;
+      color: #666;
+      margin-top: 3px;
+    }
+    #district-list {
+      overflow-y: auto;
+      flex: 1;
+      padding: 6px 0;
+    }
+    #district-list::-webkit-scrollbar { width: 4px; }
+    #district-list::-webkit-scrollbar-track { background: #111; }
+    #district-list::-webkit-scrollbar-thumb { background: #333; }
+
+    .dist-row {
+      display: flex;
+      align-items: center;
+      padding: 2px 12px;
+      cursor: pointer;
+    }
+    .dist-row:hover { background: rgba(255,255,255,0.05); }
+    .dist-row.active { background: rgba(255,255,255,0.08); }
+    .dist-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-right: 8px;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    .dist-name { flex: 1; font-size: 0.62rem; color: #fff; }
+    .dist-pct  { font-size: 0.62rem; font-weight: 600; color: #fff; min-width: 34px; text-align: right; }
+
+    #map { flex: 1; }
+
+    #status {
+      position: absolute;
+      bottom: 14px; right: 14px;
+      z-index: 1000;
+      background: rgba(10,10,10,0.85);
+      border: 1px solid #2a2a2a;
+      padding: 6px 12px;
+      font-size: 0.68rem;
+      color: #888;
+    }
+
+    .leaflet-popup-content-wrapper {
+      background: #111 !important; color: #ddd !important;
+      border: 1px solid #333 !important; border-radius: 2px !important;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.6) !important;
+      font-family: 'Helvetica Neue', Arial, sans-serif !important;
+    }
+    .leaflet-popup-tip { background: #111 !important; }
+    .leaflet-popup-content { font-size: 0.78rem; line-height: 1.55; margin: 10px 14px !important; }
+    .popup-name { font-weight: 700; color: #fff; margin-bottom: 4px; }
+    .popup-sub  { color: #666; font-size: 0.68rem; margin-top: 2px; }
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <h1>Voter Turnout &amp; Data Commons Reporting of Artwork by NYC Community District</h1>
+  <p>NYC CFB 2023 general election · Select a Community District in the Key to see artwork locations.</p>
+</div>
+
+<div id="body">
+  <div id="panel">
+    <div id="panel-head">
+      <h2>Community District</h2>
+      <p>sorted lowest → highest turnout</p>
+    </div>
+    <div id="district-list"></div>
+  </div>
+  <div id="map">
+    <div id="status">Loading…</div>
+  </div>
+</div>
+
+<script>
+// ── Turnout data — 2023 General Election ────────────────────────────────────
+const turnout = {
+  "MN01":0.182,"MN02":0.161,"MN03":0.143,"MN04":0.127,"MN05":0.154,
+  "MN06":0.201,"MN07":0.112,"MN08":0.098,"MN09":0.108,"MN10":0.132,
+  "MN11":0.094,"MN12":0.148,
+  "BX01":0.051,"BX02":0.060,"BX03":0.057,"BX04":0.071,"BX05":0.066,
+  "BX06":0.059,"BX07":0.068,"BX08":0.084,"BX09":0.081,"BX10":0.118,
+  "BX11":0.105,"BX12":0.096,
+  "BK01":0.098,"BK02":0.148,"BK03":0.105,"BK04":0.082,"BK05":0.072,
+  "BK06":0.172,"BK07":0.087,"BK08":0.078,"BK09":0.114,"BK10":0.143,
+  "BK11":0.108,"BK12":0.092,"BK13":0.161,"BK14":0.124,"BK15":0.139,
+  "BK16":0.075,"BK17":0.095,"BK18":0.112,
+  "QN01":0.118,"QN02":0.134,"QN03":0.127,"QN04":0.080,"QN05":0.106,
+  "QN06":0.098,"QN07":0.116,"QN08":0.088,"QN09":0.085,"QN10":0.084,
+  "QN11":0.144,"QN12":0.131,"QN13":0.119,"QN14":0.107,
+  "SI01":0.113,"SI02":0.105,"SI03":0.107
+};
+
+const boroLong  = {'1':'Manhattan','2':'Bronx','3':'Brooklyn','4':'Queens','5':'Staten Island'};
+const boroShort = {'1':'MN','2':'BX','3':'BK','4':'QN','5':'SI'};
+
+// White = lowest participation, dark = highest
+function grey(t) {
+  const lo = 0.05, hi = 0.22;
+  const norm = Math.max(0, Math.min(1, (t - lo) / (hi - lo)));
+  const v = Math.round(240 - norm * 200); // 240 (white) → 40 (near black)
+  return `rgb(${v},${v},${v})`;
+}
+
+// Sort all CDs lowest → highest
+const sorted = Object.entries(turnout).sort((a,b) => a[1] - b[1]);
+
+// ── Map ────────────────────────────────────────────────────────────────────
+const map = L.map('map', { zoomControl: true })
+  .setView([40.693, -73.97], 11);
+
+// ── Custom pixel-remapping tile layer ─────────────────────────────────────
+// Source: CARTO light (cream land, blue water)
+// Remap: land → #a6c754, water → #5f78c4, roads/features kept as subtle darks
+L.TileLayer.Remapped = L.TileLayer.extend({
+  createTile(coords, done) {
+    const tile = document.createElement('canvas');
+    tile.width = tile.height = 256;
+    const ctx = tile.getContext('2d');
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, 256, 256);
+      try {
+        const id = ctx.getImageData(0, 0, 256, 256);
+        const d  = id.data;
+        for (let i = 0; i < d.length; i += 4) {
+          const r = d[i], g = d[i+1], b = d[i+2];
+          const brightness = r + g + b;
+          // Water: blue is the highest channel, pixel is reasonably bright
+          // Loose thresholds to catch muted harbor/river blues
+          const isWater = b >= r && b >= g && brightness > 300;
+          if (isWater) {
+            d[i]=0x5f; d[i+1]=0x78; d[i+2]=0xc4;
+          }
+          // Land background: bright warm/neutral pixels
+          else if (brightness > 560) {
+            d[i]=0xa6; d[i+1]=0xc7; d[i+2]=0x54;
+          }
+          // Medium features (roads, parks): darker land tone
+          else if (brightness > 280) {
+            d[i]=0x7a; d[i+1]=0x96; d[i+2]=0x3c;
+          }
+          // Dark outlines: keep as-is
+        }
+        ctx.putImageData(id, 0, 0);
+      } catch(e) { /* CORS blocked — display unmodified tile */ }
+      done(null, tile);
+    };
+    img.onerror = e => done(e, tile);
+    img.src = this.getTileUrl(coords);
+    return tile;
+  }
+});
+
+new L.TileLayer.Remapped(
+  'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png',
+  { attribution: '© OpenStreetMap contributors © CARTO', subdomains: 'abcd', maxZoom: 19 }
+).addTo(map);
+
+
+const statusEl = document.getElementById('status');
+const listEl   = document.getElementById('district-list');
+const layerByKey = {};
+
+// ── Left panel ─────────────────────────────────────────────────────────────
+sorted.forEach(([key, t]) => {
+  const prefix   = key.slice(0,2);
+  const distN    = parseInt(key.slice(2));
+  const boroName = {'MN':'Manhattan','BX':'Bronx','BK':'Brooklyn','QN':'Queens','SI':'Staten Island'}[prefix];
+  const color    = grey(t);
+
+  const row = document.createElement('div');
+  row.className  = 'dist-row';
+  row.dataset.key = key;
+  row.innerHTML  = `
+    <div class="dist-dot" style="background:${color}"></div>
+    <div class="dist-name">${boroName} ${distN}</div>
+    <div class="dist-pct">${(t*100).toFixed(1)}%</div>
+  `;
+  row.addEventListener('click', () => {
+    const layer = layerByKey[key];
+    if (layer) zoomToCD(layer, boroName, distN, t, key);
+    document.querySelectorAll('.dist-row').forEach(r => r.classList.remove('active'));
+    row.classList.add('active');
+  });
+  listEl.appendChild(row);
+});
+
+// ── Load CD boundaries — try multiple sources ──────────────────────────────
+const SOURCES = [
+  'https://data.cityofnewyork.us/api/geospatial/jp9i-3b7y?method=export&type=GeoJSON',
+  'https://services5.arcgis.com/GfwWNkhOj9bNBqoJ/arcgis/rest/services/NYC_Community_Districts/FeatureServer/0/query?where=1%3D1&outFields=*&outSR=4326&f=geojson',
+  'https://data.cityofnewyork.us/resource/jp9i-3b7y.geojson?$limit=100'
+];
+
+const CACHE_KEY = 'nyc_cd_geojson_v1';
+
+function renderCDs(data) {
+  const features = data.features || [];
+  statusEl.textContent = `${features.length} districts loaded`;
+  L.geoJSON(data, {
+        style: feature => {
+          const p = feature.properties;
+          // Try multiple possible field names for the CD identifier
+          const raw = String(p.boro_cd || p.BoroCd || p.BORO_CD || p.borocd || p.BoroCD || p.boroCD || p.cd || p.CD || '');
+          const bCode = boroShort[raw[0]] || 'XX';
+          const distN = parseInt(raw.slice(1));
+          const key   = `${bCode}${String(distN).padStart(2,'0')}`;
+          const t     = turnout[key];
+          if (!t) console.warn('No turnout for key:', key, 'raw:', raw, 'props:', p);
+          return { fillColor: grey(t || 0.10), fillOpacity: 0.85, color: '#1a1a1a', weight: 1 };
+        },
+        onEachFeature: (feature, layer) => {
+          const p = feature.properties;
+          const raw   = String(p.boro_cd || p.BoroCd || p.BORO_CD || p.borocd || p.BoroCD || p.boroCD || p.cd || p.CD || '');
+          const bCode = boroShort[raw[0]] || 'XX';
+          const bName = boroLong[raw[0]]  || '';
+          const distN = parseInt(raw.slice(1));
+          const key   = `${bCode}${String(distN).padStart(2,'0')}`;
+          const t     = turnout[key] || 0.10;
+
+          layerByKey[key] = layer;
+          geometryByKey[key] = feature; // store for point-in-polygon
+          layer.bindPopup(`
+            <div class="popup-name">${bName} CD ${distN}</div>
+            <div>Voter Turnout: <strong>${(t*100).toFixed(1)}%</strong></div>
+            <div class="popup-sub">2023 General Election · off-year</div>
+          `);
+          layer.on('mouseover', () => { if (_selectedLayer !== layer) layer.setStyle({ fillOpacity: 1, weight: 2 }); });
+          layer.on('mouseout',  () => { if (_selectedLayer !== layer) layer.setStyle({ fillOpacity: 0.85, weight: 1 }); });
+          layer.on('click', () => {
+            zoomToCD(layer, bName, distN, t, key);
+            document.querySelectorAll('.dist-row').forEach(r => r.classList.remove('active'));
+            const row = document.querySelector(`.dist-row[data-key="${key}"]`);
+            if (row) { row.classList.add('active'); row.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+          });
+        }
+  }).addTo(map);
+  statusEl.textContent = 'Loading artwork…';
+  prefetchAllArtwork();
+}
+
+function tryLoad(sources) {
+  if (!sources.length) { statusEl.textContent = 'All sources failed'; return; }
+  fetch(sources[0])
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(data => {
+      if (!(data.features||[]).length) throw new Error('empty');
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch(e) {}
+      renderCDs(data);
+    })
+    .catch(() => tryLoad(sources.slice(1)));
+}
+
+// ── Mosaic palette — extracted from Hilma's Ghost (CUNY collective) ───────
+// Grand Central Madison station · colors sampled directly from the mosaic image
+// Hue balance: blues/purples dominant · warm reds/golds right · greens/teals left
+const mosaicHues = [
+  // Blues — dominant field color
+  '#1E3A8F', '#2D58A8', '#4A7BC4', '#6B9FD8', '#7B85C8',
+  // Purples / blue-violets — second most prominent
+  '#4A2D7A', '#6B4E9E', '#8B70B8', '#9B85C4', '#7B5A9E',
+  // Reds / coral — left panel and accents
+  '#C42828', '#D44830', '#C46848',
+  // Oranges / amber — right panel
+  '#D87828', '#E89838', '#F0A840',
+  // Golds / yellows — triangle shapes and borders
+  '#C89818', '#D8B428', '#E8CC38', '#F0D848',
+  // Greens — left field and geometric shapes
+  '#1B4B2E', '#2E7A4A', '#4A9860', '#5AAB78',
+  // Teals — mid-ground accents
+  '#1E6A68', '#2E8A88', '#48A8A0',
+  // Pinks / mauve / rose — scattered accents
+  '#C85880', '#B8789A', '#D898B8', '#9B6888',
+  // Warm taupe / neutral — floor and architectural elements
+  '#8B7868'
+];
+
+function artworkColor(index) {
+  return mosaicHues[index % mosaicHues.length];
+}
+
+// ── Dedicated pane so artwork always renders above CD polygons ────────────
+map.createPane('artPane');
+map.getPane('artPane').style.zIndex = 450;
+
+// ── Popup HTML builder ────────────────────────────────────────────────────
+function popupHTML(bName, distN, t, artCount) {
+  const artLine = artCount === null
+    ? `<div class="popup-sub" style="color:#666">Artwork data unavailable</div>`
+    : artCount === 0
+      ? `<div>Public Artwork Reported: <strong>0</strong> <span class="popup-sub">(none recorded in OSM)</span></div>`
+      : `<div>Public Artwork Reported: <strong>${artCount}</strong></div>`;
+  return `
+    <div class="popup-name">${bName} CD ${distN}</div>
+    <div>Voter Turnout: <strong>${(t*100).toFixed(1)}%</strong> <span class="popup-sub">2023 General Election · off-year</span></div>
+    ${artLine}
+  `;
+}
+
+// ── Global artwork store ──────────────────────────────────────────────────
+const artworkCache  = {};  // key → [{el, colorIdx}]
+const geometryByKey = {};  // key → GeoJSON feature (for point-in-polygon)
+let   artworkReady  = false;
+let   artLayer      = null;
+
+function prefetchAllArtwork() {
+  const query = `[out:json][timeout:60];node["tourism"="artwork"](40.4774,-74.2591,40.9176,-73.7004);out body;`;
+  const enc   = encodeURIComponent(query);
+  const srcs  = [
+    `https://overpass-api.de/api/interpreter?data=${enc}`,
+    `https://overpass.kumi.systems/api/interpreter?data=${enc}`,
+    `https://maps.mail.ru/osm/tools/overpass/api/interpreter?data=${enc}`
+  ];
+  function tryNext(list) {
+    if (!list.length) { artworkReady = 'failed'; return; }
+    fetch(list[0])
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(data => {
+        const els = (data.elements || []).filter(e => e.lat && e.lon);
+        let globalIdx = 0;
+        els.forEach(el => {
+          const pt = turf.point([el.lon, el.lat]);
+          for (const [key, geom] of Object.entries(geometryByKey)) {
+            if (turf.booleanPointInPolygon(pt, geom)) {
+              if (!artworkCache[key]) artworkCache[key] = [];
+              artworkCache[key].push({ el, colorIdx: globalIdx++ });
+              break;
+            }
+          }
+        });
+        artworkReady = true;
+        statusEl.textContent = `${els.length} artwork locations ready`;
+        setTimeout(() => statusEl.style.display = 'none', 2000);
+      })
+      .catch(err => { console.warn('Overpass failed:', list[0], err.message); tryNext(list.slice(1)); });
+  }
+  tryNext(srcs);
+}
+
+function showArtworkForCD(cdLayer, key, bName, distN, t) {
+  if (artLayer) { map.removeLayer(artLayer); artLayer = null; }
+  if (!artworkReady || artworkReady === 'failed') {
+    cdLayer.setPopupContent(popupHTML(bName, distN, t, artworkReady ? null : undefined) +
+      (artworkReady ? '' : `<div class="popup-sub" style="color:#888">Artwork still loading…</div>`));
+    return;
+  }
+  const els = artworkCache[key] || [];
+  artLayer = L.layerGroup();
+  els.forEach(({ el, colorIdx }) => {
+    const tags   = el.tags || {};
+    const name   = tags.name || tags['name:en'] || 'Untitled';
+    const artist = tags['artist:name'] || tags.artist_name || '';
+    const type   = tags.artwork_type || 'artwork';
+    const m = L.circleMarker([el.lat, el.lon], {
+      radius: 6, fillColor: artworkColor(colorIdx), color: '#111',
+      weight: 0.8, fillOpacity: 0.95, pane: 'artPane'
+    });
+    m.bindPopup(`
+      <div class="popup-name">${name}</div>
+      ${artist ? `<div style="color:#aaa;font-size:.7rem">Artist: ${artist}</div>` : ''}
+      <div class="popup-sub">${type} · OSM tourism=artwork</div>
+    `);
+    artLayer.addLayer(m);
+  });
+  artLayer.addTo(map);
+  cdLayer.setPopupContent(popupHTML(bName, distN, t, els.length));
+}
+
+// ── Selected CD tracking ─────────────────────────────────────────────────
+let _selectedLayer = null;
+let _selectedKey   = null;
+
+function selectCD(layer, key, t) {
+  // Reset previous selection to its greyscale colour
+  if (_selectedLayer && _selectedLayer !== layer) {
+    const prevT = turnout[_selectedKey] || 0.10;
+    _selectedLayer.setStyle({ fillColor: grey(prevT), fillOpacity: 0.85, weight: 1 });
+  }
+  layer.setStyle({ fillColor: '#b9859c', fillOpacity: 0.9, weight: 1.5 });
+  _selectedLayer = layer;
+  _selectedKey   = key;
+}
+
+// ── Zoom to a CD, popup above the CD so it doesn't cover artwork ──────────
+let _zoomTarget = null;
+function zoomToCD(layer, bName, distN, t, key) {
+  _zoomTarget = layer;
+  map.closePopup();
+  selectCD(layer, key, t);
+  showArtworkForCD(layer, key, bName, distN, t);
+
+  // Open popup at north-centre of CD bounds so it floats above the artwork
+  const bounds    = layer.getBounds();
+  const popupLatLng = L.latLng(bounds.getNorth(), bounds.getCenter().lng);
+
+  map.once('moveend', () => {
+    if (_zoomTarget !== layer) return;
+    layer.openPopup(popupLatLng);
+    // Pan so popup is fully visible above the CD
+    requestAnimationFrame(() => {
+      const popupEl = document.querySelector('.leaflet-popup');
+      if (popupEl) {
+        const popupH = popupEl.offsetHeight + 30;
+        map.panBy([0, -(popupH)], { animate: true, duration: 0.25 });
+      }
+    });
+  });
+  map.setView(bounds.getCenter(), 13, { animate: true });
+}
+
+// Load from cache instantly; fetch fresh copy in background
+const cached = (() => { try { const d = localStorage.getItem(CACHE_KEY); return d ? JSON.parse(d) : null; } catch(e) { return null; } })();
+if (cached) {
+  renderCDs(cached);
+  fetch(SOURCES[0]).then(r => r.ok ? r.json() : null).then(d => {
+    if (d && (d.features||[]).length) try { localStorage.setItem(CACHE_KEY, JSON.stringify(d)); } catch(e) {}
+  }).catch(() => {});
+} else {
+  tryLoad(SOURCES);
+}
+</script>
+</body>
+</html>
