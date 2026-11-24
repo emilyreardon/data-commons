@@ -3,16 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Public Art & Voter Turnout in NYC</title>
+  <title>Not Inevitable: Public Art & Voter Turnout in NYC</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
   <style>
+    :root { --hover: #CCFF00; --selected: #00A86B; --water: #17327A; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { height: 100%; background: #0d1a0d; color: #fff; font-family: 'Helvetica Neue', Arial, sans-serif; }
+    html, body { height: 100%; background: #050505; color: #fff; font-family: 'Helvetica Neue', Arial, sans-serif; }
 
     #header {
-      background: #111;
+      background: rgba(17,17,17,0.75);
       border-bottom: 1px solid #2a2a2a;
       padding: 14px 20px 10px;
       position: relative;
@@ -26,48 +27,22 @@
       color: #fff;
     }
     #header p {
-      font-size: 0.72rem;
-      color: #888;
+      font-size: 0.9rem;
+      color: #fff;
       margin-top: 4px;
       letter-spacing: 0.02em;
     }
 
-    #body {
-      display: flex;
-      height: calc(100vh - 62px);
-    }
+    /* As tall as the full district list, so every district is visible at a glance */
+    html, body { height: auto; }
+    body { display: flex; flex-direction: column; }
+    #body { display: flex; align-items: stretch; min-height: 100vh; }
+    body:not(.embedded) #body { min-height: calc(100vh - 56px); }
+    body.embedded #body { min-height: 0; }
+    body.embedded #header { display: none; }
 
-    #panel {
-      width: 280px;
-      flex-shrink: 0;
-      background: rgba(10,10,10,0.95);
-      border-right: 1px solid #2a2a2a;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-    #panel-head {
-      padding: 14px 16px 10px;
-      border-bottom: 1px solid #2a2a2a;
-      flex-shrink: 0;
-    }
-    #panel-head h2 {
-      font-size: 0.75rem;
-      font-weight: 700;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: #fff;
-    }
-    #panel-head p {
-      font-size: 0.65rem;
-      color: #666;
-      margin-top: 3px;
-    }
-    #district-list {
-      overflow-y: auto;
-      flex: 1;
-      padding: 6px 0;
-    }
+    #district-list { padding: 6px 0 10px; column-count: 2; column-gap: 0; }
+    .dist-row { break-inside: avoid; height: 12px; padding-top: 0 !important; padding-bottom: 0 !important; }
     #district-list::-webkit-scrollbar { width: 4px; }
     #district-list::-webkit-scrollbar-track { background: #111; }
     #district-list::-webkit-scrollbar-thumb { background: #333; }
@@ -75,23 +50,102 @@
     .dist-row {
       display: flex;
       align-items: center;
-      padding: 2px 12px;
+      padding: 0 3px;
       cursor: pointer;
     }
-    .dist-row:hover { background: rgba(255,255,255,0.05); }
-    .dist-row.active { background: rgba(255,255,255,0.08); }
-    .dist-dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      flex-shrink: 0;
-      margin-right: 8px;
-      border: 1px solid rgba(255,255,255,0.2);
+    .dist-row:hover .dist-name, .dist-row:hover .dist-pct { color: var(--hover); }
+    .dist-row:focus-visible, #artkey button:focus-visible, #election:focus-visible, a:focus-visible { outline: 2px solid var(--hover); outline-offset: 1px; }
+    .dist-row { position: relative; }
+    .dist-row.active .dist-name, .dist-row.active .dist-pct { color: #fff; font-weight: 700; text-shadow: 0 0 3px #000, 0 0 6px #000; }
+    .dist-row.active .dist-dot { background: var(--hover) !important; }
+    #district-list { position: relative; z-index: 0; }
+    .dist-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-right: 3px; }
+    .dist-name { flex: 1; font-size: 0.56rem; color: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dist-pct  { font-size: 0.56rem; font-weight: 600; color: inherit; min-width: 25px; text-align: right; }
+
+    #mapcol { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    #map { flex: 1; background: var(--water);   /* water: navy, not black */ position: relative; min-height: 600px; }
+    .block { padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid #2a2a2a; }
+    .block .hd { white-space: nowrap;
+      font-size: 0.66rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #fff; margin-bottom: 8px; }
+    .block .note { margin-top: 8px; color: #aaa; font-size: 0.56rem; line-height: 12px; }   /* same size and spacing as the key and district list */
+    #election { display: block; width: 100%; background: #111; color: #fff; border: 1px solid #444; font: inherit; font-size: 0.75rem; padding: 4px; cursor: pointer; }
+    #election:hover { border-color: var(--hover); }
+    /* same type size, row height and dot size as the community district list */
+    #artkey button { all: unset; cursor: pointer; display: flex; align-items: center; gap: 3px; padding: 0; height: 12px; font-size: 0.56rem; }
+    #artkey button i { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    #artkey button:hover { color: var(--hover); }
+    #artkey button { position: relative; }
+    #artkey button[aria-pressed="true"] { font-weight: 700; }
+    #artkey { position: relative; z-index: 0; }
+    #info .intro { color: #fff; line-height: 1.3; }   /* font size set by fitIntro() to fill the column */
+    #info .intro p:first-child { margin-top: 0; }
+    #info {
+      width: 228px; flex-shrink: 0;   /* sized so this column ends level with the right one */
+      background: rgba(10,10,10,0.62); border-right: 1px solid #2a2a2a;
+      padding: 12px 10px 14px; font-size: 0.72rem; line-height: 1.45; color: #ddd;
     }
-    .dist-name { flex: 1; font-size: 0.62rem; color: #fff; }
-    .dist-pct  { font-size: 0.62rem; font-weight: 600; color: #fff; min-width: 34px; text-align: right; }
+    #info h2 { font-size: inherit; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+    #info p { margin-top: 9px; }
+    #info b { font-weight: 700; }
+    #info a, #keycol a { color: inherit; text-decoration: underline; }
+    #info a:hover, #keycol a:hover { color: var(--hover); }
+    #info .ask { font-weight: 700; margin-top: 0; }
+    #info .intro p:not(.ask) { font-size: 0.84em; }
+    #info .ask mark { background: #fff; color: #0a0a0a; padding: 0 0.15em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+    #info { display: flex; flex-direction: column; overflow: hidden; }
+    .act { margin: 0; color: #fff; font-size: 0.72rem; line-height: 1.45; }
+    #info .act { padding-top: 2px; margin-top: 0; }
+    #keycol .act { padding: 8px 4px 0; border-top: 1px solid #2a2a2a; margin-bottom: 40px; }   /* room below for the site's pop-out arrow */
+    .act a { color: var(--hover) !important; }
+    .act a:hover { color: #fff !important; }
+    #keycol {
+      width: 240px; flex-shrink: 0; display: flex; flex-direction: column;
+      background: rgba(10,10,10,0.62); border-left: 1px solid #2a2a2a;
+    }
+    #keycol #vote { padding: 12px 4px 10px; margin: 0; line-height: 1.45; color: #ddd; }
+    .key-head { padding: 8px 4px 6px; font-size: 0.66rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #fff; border-bottom: 1px solid #2a2a2a; }
+    .key-head span { font-weight: 400; letter-spacing: 0.02em; text-transform: none; color: #bbb; font-size: 0.68rem; }
+    /* Artwork dots glow softly */
+    .leaflet-art-pane path {
+      transform-box: fill-box; transform-origin: center;
+      animation: breathe 3.6s ease-in-out infinite;
+    }
+    .leaflet-art-pane path:nth-child(3n+1) { animation-delay: -1.2s; }
+    .leaflet-art-pane path:nth-child(3n+2) { animation-delay: -2.4s; }
+    @keyframes breathe { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.18); opacity: 0.85; } }
+    .art-osm  { filter: drop-shadow(0 0 7px #FF2A2A) drop-shadow(0 0 2px #FF2A2A); }
+    .art-pdc  { filter: drop-shadow(0 0 7px #FFB38A) drop-shadow(0 0 2px #FFB38A); }
+    .art-dot  { filter: drop-shadow(0 0 7px #FF4FD8) drop-shadow(0 0 2px #FF4FD8); }
+    .art-pct  { filter: drop-shadow(0 0 7px #00E5D4) drop-shadow(0 0 2px #00E5D4); }
+    @media (prefers-reduced-motion: reduce) { .leaflet-art-pane path { animation: none; } }
+    .leaflet-container { background: transparent; }
+    .leaflet-container .leaflet-control-attribution { background: rgba(10,10,10,0.8); color: #777; font-size: 0.6rem; }
+    .leaflet-container .leaflet-control-attribution a { color: #aaa; }
+    .leaflet-bar a { background: #111; color: #ddd; border-color: #333; }
+    .leaflet-bar a:hover { background: #222; color: #fff; }
 
-    #map { flex: 1; }
-
+    .leaflet-tooltip.art-tip { background: #0a0a0a; color: #fff; border: 1px solid #fff; border-radius: 2px; font-size: 0.72rem; box-shadow: none; }
+    .leaflet-tooltip.art-tip::before { border-top-color: #fff; }
+    .popup-link a { color: var(--hover); }
+    /* the map and the district list stay hidden until both are drawn, then fade in together */
+    #map .leaflet-pane, #district-list { opacity: 0; transition: opacity 0.5s ease; }
+    body.ready #map .leaflet-pane, body.ready #district-list { opacity: 1; }
+    /* Narrow screens (phones): the three columns stack: words, then map, then turnout and districts */
+    @media (max-width: 760px) {
+      #body { flex-direction: column; }
+      #info, #keycol { width: auto !important; height: auto !important; }
+      #info { border-right: none; border-bottom: 1px solid #2a2a2a; }
+      #keycol { border-left: none; border-top: 1px solid #2a2a2a; }
+      #mapcol { flex: none; }
+      #map { flex: none; min-height: 280px; height: 90vw; max-height: 70vh; }   /* flex:1 would collapse it to nothing in a stacked layout */
+      /* type a little larger, since a phone screen is small and held close */
+      .dist-row { height: 17px; }
+      .dist-name, .dist-pct, #artkey button, .block .note { font-size: 0.72rem; }
+      #artkey button { height: 18px; }
+      .block .note { line-height: 1.4; }
+    }
+    #ripples { position: absolute; top: 0; left: 0; pointer-events: none; }
     #status {
       position: absolute;
       bottom: 14px; right: 14px;
@@ -104,385 +158,789 @@
     }
 
     .leaflet-popup-content-wrapper {
-      background: #111 !important; color: #ddd !important;
+      background: #111 !important; color: #eee !important;
       border: 1px solid #333 !important; border-radius: 2px !important;
       box-shadow: 0 2px 12px rgba(0,0,0,0.6) !important;
       font-family: 'Helvetica Neue', Arial, sans-serif !important;
     }
     .leaflet-popup-tip { background: #111 !important; }
-    .leaflet-popup-content { font-size: 0.78rem; line-height: 1.55; margin: 10px 14px !important; }
-    .popup-name { font-weight: 700; color: #fff; margin-bottom: 4px; }
-    .popup-sub  { color: #666; font-size: 0.68rem; margin-top: 2px; }
+    .leaflet-popup-content { font-size: 12px; line-height: 1.45; color: #eee; margin: 8px 12px !important; }
+    .leaflet-popup-content * { font-size: 12px !important; color: #eee !important; }
+    .popup-name { font-weight: 700; }
+    .leaflet-art-pane path:focus, .leaflet-art-pane path:focus-visible { outline: none; }   /* the chosen dot gets the yellow cloud instead */
+    .leaflet-popup-content a { text-decoration: underline; }
+    .leaflet-popup-content a:hover { color: var(--hover) !important; }
   </style>
 </head>
 <body>
 
 <div id="header">
-  <h1>Voter Turnout &amp; Data Commons Reporting of Artwork by NYC Community District</h1>
-  <p>NYC CFB 2023 general election · Select a Community District in the Key to see artwork locations.</p>
+  <h1>Not Inevitable: Public Art &amp; Voter Turnout in NYC</h1>
 </div>
 
 <div id="body">
-  <div id="panel">
-    <div id="panel-head">
-      <h2>Community District</h2>
-      <p>sorted lowest → highest turnout</p>
+  <div id="info">
+    <div class="intro block" id="intro">
+      <p class="ask"><mark>What would it take for you to imagine a different future, and help make it?</mark></p>
+      <p>Our lives and our democracy run on technology built by a few private companies designed for profit. Artists have long instigated change by helping to envision alternate futures to those that otherwise feel inevitable. I believe Public Art can have a direct impact on public democracy, and that it might ignite the reimagining and rebuilding we need.</p>
+      <p>This visualization on purpose doesn’t show any connection between public art and civic engagement; it uses both open data sets to propose art as one way forward when it’s hard to see where we are going. Turnout is shaped by oppression, racism, poverty, weak labor protections, and whether people believe they have power. Art can expose that; changed minds and votes change it.</p>
+      <p>Lighter districts voted less; each glowing dot is public art.</p>
     </div>
-    <div id="district-list"></div>
+    <div id="artkey" class="block" role="group" aria-label="Public art sources: click one to see only its art across the city">
+      <div class="hd">Public art by who counted it</div>
+      <button data-src="OpenStreetMap" aria-pressed="false"><i></i>Volunteers on OpenStreetMap</button>
+      <button data-src="Public Design Commission" aria-pressed="false"><i></i>Public Design Commission</button>
+      <button data-src="DOT Art" aria-pressed="false"><i></i>DOT Art</button>
+      <button data-src="Percent for Art" aria-pressed="false"><i></i>Percent for Art</button>
+      <div class="note">Volunteers map the art they notice; the city records what it owns, permits or funds. The gap between them is part of the picture. Click a source to see only its art across the city. Volunteer data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL); city records from NYC Open Data.</div>
+    </div>
+    <p class="act"><b>Take part:</b> <a href="https://www.nycgovparks.org/art-and-antiquities/temporary-guidelines" target="_blank" rel="noopener">Apply to show your art in a NYC park.</a> Email a proposal any time, ideally for a park near you where the map shows little art. If it’s selected, you’ll share it with your Community Board. · <a href="https://www.openstreetmap.org/" target="_blank" rel="noopener">Map missing art</a></p>
   </div>
-  <div id="map">
-    <div id="status">Loading…</div>
+  <div id="mapcol">
+    <div id="map" role="region" aria-label="Map of New York City’s community districts, shaded by voter turnout (lighter is lower), with public art as coloured dots. The district list holds the same turnout figures.">
+      <div id="status">Loading…</div>
+    </div>
+  </div>
+  <div id="keycol">
+    <div id="vote" class="block">
+      <div class="hd">Voter turnout by election</div>
+      <select id="election" aria-label="Choose an election"></select>
+      <div class="note">Published once a year, so it runs a year or more behind. The map updates itself. Lighter means lower turnout among eligible voters. Sources: NYC Campaign Finance Board, NYC City Planning (NYC Open Data). Mapped with <a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>. <a href="https://emilyreardon.org/not-inevitable-method.html" target="_blank" rel="noopener">How it&rsquo;s made</a>.</div>
+    </div>
+    <div class="key-head">Community districts</div>
+    <div id="district-list"></div>
+    <p class="act"><b>Take part:</b> <a id="board-link" href="https://www.nyc.gov/site/communityboards/about/the-boroughs.page" target="_blank" rel="noopener">Attend your community board’s monthly meeting.</a> <span id="board-hint">Anyone can speak about what gets built and funded nearby. Select a district above, and this link will go to that community board’s site.</span> · <a href="https://www.participate.nyc.gov/" target="_blank" rel="noopener">Help decide how part of the city budget is spent</a>: ages 11+ and any immigration status can vote. · <a href="https://voterlookup.elections.ny.gov/" target="_blank" rel="noopener">Check your voter registration</a></p>
   </div>
 </div>
 
 <script>
-// ── Turnout data — 2023 General Election ────────────────────────────────────
-const turnout = {
-  "MN01":0.182,"MN02":0.161,"MN03":0.143,"MN04":0.127,"MN05":0.154,
-  "MN06":0.201,"MN07":0.112,"MN08":0.098,"MN09":0.108,"MN10":0.132,
-  "MN11":0.094,"MN12":0.148,
-  "BX01":0.051,"BX02":0.060,"BX03":0.057,"BX04":0.071,"BX05":0.066,
-  "BX06":0.059,"BX07":0.068,"BX08":0.084,"BX09":0.081,"BX10":0.118,
-  "BX11":0.105,"BX12":0.096,
-  "BK01":0.098,"BK02":0.148,"BK03":0.105,"BK04":0.082,"BK05":0.072,
-  "BK06":0.172,"BK07":0.087,"BK08":0.078,"BK09":0.114,"BK10":0.143,
-  "BK11":0.108,"BK12":0.092,"BK13":0.161,"BK14":0.124,"BK15":0.139,
-  "BK16":0.075,"BK17":0.095,"BK18":0.112,
-  "QN01":0.118,"QN02":0.134,"QN03":0.127,"QN04":0.080,"QN05":0.106,
-  "QN06":0.098,"QN07":0.116,"QN08":0.088,"QN09":0.085,"QN10":0.084,
-  "QN11":0.144,"QN12":0.131,"QN13":0.119,"QN14":0.107,
-  "SI01":0.113,"SI02":0.105,"SI03":0.107
-};
+// Inside the project page the page itself has the title, so hide this one
+if (window.self !== window.top) document.body.classList.add('embedded');
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   DATA, AND HOW EACH PIECE STAYS CURRENT
+   • Turnout: NYC Campaign Finance Board, "Historical Voter Turnout" (NYC Open Data
+     rixx-fc37), published by Election District about once a year. The map first shows
+     the saved copy (data/turnout_by_cd.json, built by tools/build_turnout.py), then asks
+     NYC Open Data whether a newer election exists; if so it adds it up and shows it.
+   • Artwork: OpenStreetMap. Saved copy first, then today's data if the server answers.
+   • Boundaries: Community Districts (City Planning), saved; they rarely change.
+   ───────────────────────────────────────────────────────────────────────────── */
+const TURNOUT_API = 'https://data.cityofnewyork.us/resource/rixx-fc37.json';
 
 const boroLong  = {'1':'Manhattan','2':'Bronx','3':'Brooklyn','4':'Queens','5':'Staten Island'};
 const boroShort = {'1':'MN','2':'BX','3':'BK','4':'QN','5':'SI'};
+const boroSlug  = {'MN':'manhattan','BX':'bronx','BK':'brooklyn','QN':'queens','SI':'staten-island'};
+const boroOfKey = {'MN':'Manhattan','BX':'Bronx','BK':'Brooklyn','QN':'Queens','SI':'Staten Island'};
+// Every board's own website, as listed on nyc.gov/site/communityboards (they don't share one address pattern)
+const BOARD_SITE = {
+  BX01: 'https://www1.nyc.gov/site/bronxcb1/index.page', BX02: 'https://www1.nyc.gov/site/bronxcb2/index.page', BX03: 'https://www1.nyc.gov/site/bronxcb3/index.page',
+  BX04: 'https://www1.nyc.gov/site/bronxcb4/index.page', BX05: 'https://www1.nyc.gov/site/bronxcb5/index.page', BX06: 'https://www.nyc.gov/bxcb6',
+  BX07: 'https://www1.nyc.gov/site/bronxcb7/index.page', BX08: 'https://www1.nyc.gov/site/bronxcb8/index.page', BX09: 'https://www1.nyc.gov/site/bronxcb9/index.page',
+  BX10: 'https://www1.nyc.gov/site/bronxcb10/index.page', BX11: 'https://www1.nyc.gov/site/bronxcb11/index.page', BX12: 'https://www1.nyc.gov/site/bronxcb12/index.page',
+  BK01: 'https://www1.nyc.gov/site/brooklyncb1/index.page', BK02: 'https://www1.nyc.gov/site/brooklyncb2/index.page', BK03: 'https://www1.nyc.gov/site/brooklyncb3/index.page',
+  BK04: 'https://www1.nyc.gov/site/brooklyncb4/index.page', BK05: 'https://www.nyc.gov/site/brooklyncb5/index.page', BK06: 'https://www1.nyc.gov/site/brooklyncb6/index.page',
+  BK07: 'https://www1.nyc.gov/site/brooklyncb7/index.page', BK08: 'https://www.brooklyncb8.org/', BK09: 'https://www1.nyc.gov/site/brooklyncb9/index.page',
+  BK10: 'https://cbbrooklyn.cityofnewyork.us/cb10/', BK11: 'https://www.brooklyncb11.org/', BK12: 'https://www.nyc.gov/brooklyncb12',
+  BK13: 'https://www1.nyc.gov/site/brooklyncb13/index.page', BK14: 'https://www.cb14brooklyn.com/', BK15: 'https://www1.nyc.gov/site/brooklyncb15/index.page',
+  BK16: 'https://www1.nyc.gov/site/brooklyncb16/index.page', BK17: 'https://www.nyc.gov/brooklyncb17', BK18: 'https://www1.nyc.gov/site/brooklyncb18/index.page',
+  MN01: 'https://www1.nyc.gov/site/manhattancb1/index.page', MN02: 'https://cbmanhattan.cityofnewyork.us/cb2/', MN03: 'https://www1.nyc.gov/site/manhattancb3/index.page',
+  MN04: 'https://cbmanhattan.cityofnewyork.us/cb4/', MN05: 'https://www.cb5.org', MN06: 'https://cbsix.org/',
+  MN07: 'https://www1.nyc.gov/site/manhattancb7/index.page', MN08: 'https://www.cb8m.com/', MN09: 'https://www.cb9m.org/',
+  MN10: 'https://cbmanhattan.cityofnewyork.us/cb10/', MN11: 'https://www.cb11m.org/', MN12: 'https://cbmanhattan.cityofnewyork.us/cb12/',
+  QN01: 'https://www1.nyc.gov/site/queenscb1/index.page', QN02: 'https://www1.nyc.gov/site/queenscb2/index.page', QN03: 'https://queenscb3.cityofnewyork.us/',
+  QN04: 'https://www1.nyc.gov/site/queenscb4/index.page', QN05: 'https://www1.nyc.gov/site/queenscb5/index.page', QN06: 'https://www1.nyc.gov/site/queenscb6/index.page',
+  QN07: 'https://www1.nyc.gov/site/queenscb7/index.page', QN08: 'https://www1.nyc.gov/site/queenscb8/index.page', QN09: 'https://www1.nyc.gov/site/queenscb9/index.page',
+  QN10: 'https://www1.nyc.gov/site/queenscb10/index.page', QN11: 'https://www1.nyc.gov/site/queenscb11/index.page', QN12: 'https://www1.nyc.gov/site/queenscb12/index.page',
+  QN13: 'https://www1.nyc.gov/site/queenscb13/index.page', QN14: 'https://www1.nyc.gov/site/queenscb14/index.page',
+  SI01: 'https://www1.nyc.gov/site/statenislandcb1/index.page', SI02: 'https://www1.nyc.gov/site/statenislandcb2/index.page', SI03: 'https://www1.nyc.gov/site/statenislandcb3/index.page',
+};
+// With no district chosen, the link goes to the city's list of every board (each with its meeting schedule);
+// choosing a district points it straight at that board's own site.
+const boardLink = document.getElementById('board-link'), boardHint = document.getElementById('board-hint');
+const BOARD_DEFAULT = { href: boardLink.href, text: boardLink.textContent, hint: boardHint.textContent };
+let boardFor = null;
+function updateBoardLink() {
+  if (boardFor === _selectedKey) return;
+  boardFor = _selectedKey;
+  const site = _selectedKey && BOARD_SITE[_selectedKey];
+  if (site) {
+    boardLink.href = site;
+    boardLink.textContent = `Attend ${boroOfKey[_selectedKey.slice(0, 2)]} ${parseInt(_selectedKey.slice(2))}’s monthly community board meeting.`;
+    boardHint.textContent = 'Anyone can speak about what gets built and funded nearby.';
+  } else {
+    boardLink.href = BOARD_DEFAULT.href; boardLink.textContent = BOARD_DEFAULT.text; boardHint.textContent = BOARD_DEFAULT.hint;
+  }
+}
 
-// White = lowest participation, dark = highest
+let elections = [];          // [{name, date, citywide, turnout:{MN01:0.72,…}}], newest first
+let current   = null;        // the election on screen
+let turnout   = {};          // current.turnout
+let range     = [0, 1];      // lowest and highest turnout in the current election
+
+// Community districts are numbered 1–18; parks and airports (Joint Interest Areas) are higher
+const isCD = key => parseInt(key.slice(2)) <= 18;
+const pct  = t => (t * 100).toFixed(1) + '%';
+function niceDate(iso) {
+  return new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+function electionLabel(e) {
+  // CFB names look like "2024 General Election", "2023 General", "2024 State Primary"
+  const n = e.name.replace(/^\d{4}\s+/, '').replace(/\s+Election$/i, '').toLowerCase();
+  return `${niceDate(e.date)} ${n} election`;
+}
+
+// Light = lowest turnout in this election, dark = highest
+let sortedVals = [];
+function dim(rgb) {
+  const v = +((rgb.match(/\d+/) || [60])[0]);
+  const d = Math.round(30 + v * 0.35);
+  return `rgb(${d},${d},${d})`;
+}
 function grey(t) {
-  const lo = 0.05, hi = 0.22;
-  const norm = Math.max(0, Math.min(1, (t - lo) / (hi - lo)));
-  const v = Math.round(240 - norm * 200); // 240 (white) → 40 (near black)
+  // Rank, not raw value, so the 59 districts spread evenly from white (lowest) to dark grey (highest);
+  // the curve keeps more of them in the light greys
+  const i = sortedVals.findIndex(v => v >= t);
+  const norm = sortedVals.length > 1 ? Math.max(0, i) / (sortedVals.length - 1) : 0.5;
+  const v = Math.round(255 - 200 * Math.pow(norm, 1.5));
   return `rgb(${v},${v},${v})`;
 }
 
-// Sort all CDs lowest → highest
-const sorted = Object.entries(turnout).sort((a,b) => a[1] - b[1]);
-
 // ── Map ────────────────────────────────────────────────────────────────────
-const map = L.map('map', { zoomControl: true })
-  .setView([40.693, -73.97], 11);
-
-// ── Custom pixel-remapping tile layer ─────────────────────────────────────
-// Source: CARTO light (cream land, blue water)
-// Remap: land → #a6c754, water → #5f78c4, roads/features kept as subtle darks
-L.TileLayer.Remapped = L.TileLayer.extend({
-  createTile(coords, done) {
-    const tile = document.createElement('canvas');
-    tile.width = tile.height = 256;
-    const ctx = tile.getContext('2d');
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      ctx.drawImage(img, 0, 0, 256, 256);
-      try {
-        const id = ctx.getImageData(0, 0, 256, 256);
-        const d  = id.data;
-        for (let i = 0; i < d.length; i += 4) {
-          const r = d[i], g = d[i+1], b = d[i+2];
-          const brightness = r + g + b;
-          // Water: blue is the highest channel, pixel is reasonably bright
-          // Loose thresholds to catch muted harbor/river blues
-          const isWater = b >= r && b >= g && brightness > 300;
-          if (isWater) {
-            d[i]=0x5f; d[i+1]=0x78; d[i+2]=0xc4;
-          }
-          // Land background: bright warm/neutral pixels
-          else if (brightness > 560) {
-            d[i]=0xa6; d[i+1]=0xc7; d[i+2]=0x54;
-          }
-          // Medium features (roads, parks): darker land tone
-          else if (brightness > 280) {
-            d[i]=0x7a; d[i+1]=0x96; d[i+2]=0x3c;
-          }
-          // Dark outlines: keep as-is
-        }
-        ctx.putImageData(id, 0, 0);
-      } catch(e) { /* CORS blocked — display unmodified tile */ }
-      done(null, tile);
-    };
-    img.onerror = e => done(e, tile);
-    img.src = this.getTileUrl(coords);
-    return tile;
-  }
-});
-
-new L.TileLayer.Remapped(
-  'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png',
-  { attribution: '© OpenStreetMap contributors © CARTO', subdomains: 'abcd', maxZoom: 19 }
-).addTo(map);
-
+const map = L.map('map', { zoomControl: false, attributionControl: false, maxZoom: 16, zoomSnap: 0.25, zoomDelta: 0.5 }).setView([40.70, -73.95], 10);
+// No basemap: the districts themselves draw the city, like tiles in a mosaic
 
 const statusEl = document.getElementById('status');
 const listEl   = document.getElementById('district-list');
-const layerByKey = {};
+const layerByKey    = {};
+const geometryByKey = {};
 
-// ── Left panel ─────────────────────────────────────────────────────────────
-sorted.forEach(([key, t]) => {
-  const prefix   = key.slice(0,2);
-  const distN    = parseInt(key.slice(2));
-  const boroName = {'MN':'Manhattan','BX':'Bronx','BK':'Brooklyn','QN':'Queens','SI':'Staten Island'}[prefix];
-  const color    = grey(t);
+const HOVER = '#CCFF00', SELECTED = '#00A86B';  // yellow-green hover, emerald when chosen
+const JIA_STYLE = { fillColor: '#1c1c1c', fillOpacity: 1, color: '#0a0a0a', weight: 1.5 };
+function baseStyle(t) { return { fillColor: t == null ? '#333' : grey(t), fillOpacity: 1, color: '#0a0a0a', weight: 1.5 }; }
+let cdGeo = null;
+let _selectedLayer = null, _selectedKey = null;
+function restStyle(l) {
+  const st = isCD(l._cdKey) ? baseStyle(turnout[l._cdKey]) : JIA_STYLE;
+  if (!_selectedLayer) return st;
+  if (l === _selectedLayer) return { ...st, fillColor: SELECTED, fillOpacity: 1 };
+  // the rest of the city dims but stays grey: solid, darker greys, so the water stays the only blue
+  return { ...st, fillColor: dim(st.fillColor) };
+}
 
-  const row = document.createElement('div');
-  row.className  = 'dist-row';
-  row.dataset.key = key;
-  row.innerHTML  = `
-    <div class="dist-dot" style="background:${color}"></div>
-    <div class="dist-name">${boroName} ${distN}</div>
-    <div class="dist-pct">${(t*100).toFixed(1)}%</div>
-  `;
-  row.addEventListener('click', () => {
-    const layer = layerByKey[key];
-    if (layer) zoomToCD(layer, boroName, distN, t, key);
-    document.querySelectorAll('.dist-row').forEach(r => r.classList.remove('active'));
-    row.classList.add('active');
+// ── The key: every district, lowest → highest turnout ──────────────────────
+function buildList() {
+  listEl.innerHTML = '';
+  Object.entries(turnout).filter(([k]) => isCD(k)).sort((a, b) => a[1] - b[1]).forEach(([key, t]) => {
+    const distN = parseInt(key.slice(2));
+    const boroName = boroOfKey[key.slice(0, 2)];
+    const row = document.createElement('div');
+    row.className = 'dist-row' + (key === _selectedKey ? ' active' : '');
+    row.dataset.key = key;
+    row.style.color = grey(t);   // lowest turnout reads white, highest dark grey
+    row.innerHTML = `<div class="dist-dot" style="background:${grey(t)}"></div>
+      <div class="dist-name">${boroName} ${distN}</div><div class="dist-pct">${pct(t)}</div>`;
+    // Hovering a name in the key lights up its district on the map too
+    row.addEventListener('mouseenter', () => { const l = layerByKey[key]; if (l) l.fire('mouseover'); });
+    row.addEventListener('mouseleave', () => { const l = layerByKey[key]; if (l) l.fire('mouseout'); });
+    row.addEventListener('click', () => {
+      const layer = layerByKey[key];
+      if (layer) zoomToCD(layer, boroName, distN, key);
+      document.querySelectorAll('.dist-row').forEach(r => r.classList.remove('active'));
+      row.classList.add('active');
+    });
+    // keyboard and screen readers: each row is a button announcing its turnout
+    row.tabIndex = 0;
+    row.setAttribute('role', 'button');
+    row.setAttribute('aria-label', `${boroName} ${distN}: ${pct(t)} turnout. Show on map`);
+    row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.click(); } });
+    listEl.appendChild(row);
   });
-  listEl.appendChild(row);
+}
+
+// ── Show one election everywhere: tiles, key, labels, open popup ───────────
+function showElection(e, isNew) {
+  current = e; turnout = e.turnout;
+  const vals = Object.entries(turnout).filter(([k]) => isCD(k)).map(([, t]) => t);
+  range = [Math.min(...vals), Math.max(...vals)];
+  sortedVals = vals.slice().sort((a, b) => a - b);
+  buildList();
+  pickEl.value = e.name;
+  map.invalidateSize();
+  if (cdGeo) cdGeo.eachLayer(l => l.setStyle(restStyle(l)));
+  if (_current) showArtworkForCD(..._current);
+  fitIntro();
+}
+
+// ── The election menu ─────────────────────────────────────────────────────
+const pickEl = document.getElementById('election');
+function fillPicker() {
+  // Short labels so they fit the column: "2024 general election", "2024 state primary"
+  const short = iso => new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  pickEl.innerHTML = elections.map(e => `<option value="${e.name}">${short(e.date)} ${e.name.replace(/^\d{4}\s+/, '').replace(/\s+Election$/i, '').toLowerCase()}${/primary/i.test(e.name) ? '' : ' election'}</option>`).join('');
+  if (current) pickEl.value = current.name;
+}
+pickEl.addEventListener('change', () => {
+  // a new election starts fresh: no district or source chosen, back to the opening view
+  map.closePopup(); _selectedLayer = null; _selectedKey = null; updateBoardLink(); _current = null; sourceFilter = null; markKey();
+  if (artLayer) { map.removeLayer(artLayer); artLayer = null; }
+  showElection(elections.find(e => e.name === pickEl.value));
+  openView();
 });
 
-// ── Load CD boundaries — try multiple sources ──────────────────────────────
-const SOURCES = [
-  'https://data.cityofnewyork.us/api/geospatial/jp9i-3b7y?method=export&type=GeoJSON',
-  'https://services5.arcgis.com/GfwWNkhOj9bNBqoJ/arcgis/rest/services/NYC_Community_Districts/FeatureServer/0/query?where=1%3D1&outFields=*&outSR=4326&f=geojson',
-  'https://data.cityofnewyork.us/resource/jp9i-3b7y.geojson?$limit=100'
-];
+// ── The opening words grow to fill whatever height the left column has ───
+function fitIntro() {
+  const info = document.getElementById('info'), intro = document.getElementById('intro');
+  const list = document.getElementById('district-list'), head = document.querySelector('.key-head');
+  if (matchMedia('(max-width: 760px)').matches) { info.style.height = 'auto'; intro.style.fontSize = '15px'; return; }
+  const MIN = 13, MAX = 13;   // the opening words stay readable but never shout
+  const ROW = 12;             // natural height of one district row
+  const rows = Math.ceil(list.querySelectorAll('.dist-row').length / 2);   // rows per list column
+  // Height: what the left column needs at its smallest type, the list at its natural spacing,
+  // or the window when shown on its own, whichever is tallest
+  info.style.height = 'auto';
+  intro.style.fontSize = MIN + 'px';
+  const needH = info.scrollHeight;
+  const listH = document.getElementById('vote').offsetHeight + head.offsetHeight + rows * ROW + 16 + (a => a.offsetHeight + parseFloat(getComputedStyle(a).marginBottom))(document.querySelector('#keycol .act'));
+  const frameH = document.body.classList.contains('embedded') ? 0 : window.innerHeight - document.getElementById('header').offsetHeight;
+  const H = Math.max(needH, listH, frameH);
+  info.style.height = H + 'px';
+  // the district rows spread out so both list columns end level with the left column
+  // the opening words grow into any space left over
+  let lo = MIN, hi = MAX;
+  for (let k = 0; k < 10; k++) {
+    const mid = (lo + hi) / 2;
+    intro.style.fontSize = mid + 'px';
+    info.scrollHeight > info.clientHeight ? hi = mid : lo = mid;
+  }
+  intro.style.fontSize = Math.floor(lo) + 'px';
+}
+window.addEventListener('resize', fitIntro);
 
-const CACHE_KEY = 'nyc_cd_geojson_v1';
+// ── 1) Saved turnout: every election, works offline ────────────────────────
+const savedTurnout = fetch('data/turnout_by_cd.json').then(r => r.json()).then(d => {
+  elections = d.elections; fillPicker(); return elections[0];
+});
 
+// ── 2) Live: is there a newer election than the saved copy? ────────────────
+async function checkForNewerElection() {
+  const num = s => +String(s ?? '').replace(/,/g, '');
+  const q = new URLSearchParams({
+    '$select': 'election, election_date, count(*)',
+    '$where': "geo_level='Election District'",
+    '$group': 'election, election_date', '$order': 'election_date DESC', '$limit': '1'
+  });
+  const [latest] = await (await fetch(`${TURNOUT_API}?${q}`)).json();
+  const date = latest.election_date.slice(0, 10);
+  if (elections.some(e => e.name === latest.election)) return;   // nothing new yet
+  // A newer election: add up its Election Districts into Community Districts
+  const lookup = await (await fetch('data/ed_to_cd.json')).json();
+  const edToCd = {}; for (const [k, ids] of Object.entries(lookup)) ids.forEach(id => edToCd[id] = k);
+  const rows = await (await fetch(`${TURNOUT_API}?${new URLSearchParams({
+    '$select': 'geo_unit, voted, did_not_vote',
+    '$where': `geo_level='Election District' AND election='${latest.election.replace(/'/g, "''")}'`,
+    '$limit': '20000' })}`)).json();
+  const sums = {}; let cv = 0, cd = 0;
+  for (const r of rows) {
+    const v = num(r.voted), d = num(r.did_not_vote);
+    if (isNaN(v) || isNaN(d)) continue;           // withheld for privacy in very small districts
+    cv += v; cd += d;
+    const k = edToCd[num(r.geo_unit)]; if (!k) continue;
+    const a = sums[k] = sums[k] || [0, 0]; a[0] += v; a[1] += d;
+  }
+  const t = {}; for (const [k, [v, d]] of Object.entries(sums)) if (v + d) t[k] = +(v / (v + d)).toFixed(3);
+  const e = { name: latest.election, date, citywide: cv + cd ? +(cv / (cv + cd)).toFixed(3) : null, turnout: t };
+  elections.unshift(e); fillPicker(); showElection(e, true);
+}
+
+// ── Community District boundaries (saved) ──────────────────────────────────
+function keyOf(p) {
+  const raw = String(p.boro_cd || p.BoroCD || p.borocd || '');
+  return [`${boroShort[raw[0]] || 'XX'}${String(parseInt(raw.slice(1))).padStart(2, '0')}`, boroLong[raw[0]] || '', parseInt(raw.slice(1))];
+}
 function renderCDs(data) {
-  const features = data.features || [];
-  statusEl.textContent = `${features.length} districts loaded`;
-  L.geoJSON(data, {
-        style: feature => {
-          const p = feature.properties;
-          // Try multiple possible field names for the CD identifier
-          const raw = String(p.boro_cd || p.BoroCd || p.BORO_CD || p.borocd || p.BoroCD || p.boroCD || p.cd || p.CD || '');
-          const bCode = boroShort[raw[0]] || 'XX';
-          const distN = parseInt(raw.slice(1));
-          const key   = `${bCode}${String(distN).padStart(2,'0')}`;
-          const t     = turnout[key];
-          if (!t) console.warn('No turnout for key:', key, 'raw:', raw, 'props:', p);
-          return { fillColor: grey(t || 0.10), fillOpacity: 0.85, color: '#1a1a1a', weight: 1 };
-        },
-        onEachFeature: (feature, layer) => {
-          const p = feature.properties;
-          const raw   = String(p.boro_cd || p.BoroCd || p.BORO_CD || p.borocd || p.BoroCD || p.boroCD || p.cd || p.CD || '');
-          const bCode = boroShort[raw[0]] || 'XX';
-          const bName = boroLong[raw[0]]  || '';
-          const distN = parseInt(raw.slice(1));
-          const key   = `${bCode}${String(distN).padStart(2,'0')}`;
-          const t     = turnout[key] || 0.10;
-
-          layerByKey[key] = layer;
-          geometryByKey[key] = feature; // store for point-in-polygon
-          layer.bindPopup(`
-            <div class="popup-name">${bName} CD ${distN}</div>
-            <div>Voter Turnout: <strong>${(t*100).toFixed(1)}%</strong></div>
-            <div class="popup-sub">2023 General Election · off-year</div>
-          `);
-          layer.on('mouseover', () => { if (_selectedLayer !== layer) layer.setStyle({ fillOpacity: 1, weight: 2 }); });
-          layer.on('mouseout',  () => { if (_selectedLayer !== layer) layer.setStyle({ fillOpacity: 0.85, weight: 1 }); });
-          layer.on('click', () => {
-            zoomToCD(layer, bName, distN, t, key);
-            document.querySelectorAll('.dist-row').forEach(r => r.classList.remove('active'));
-            const row = document.querySelector(`.dist-row[data-key="${key}"]`);
-            if (row) { row.classList.add('active'); row.scrollIntoView({behavior:'smooth',block:'nearest'}); }
-          });
-        }
+  cdGeo = L.geoJSON(data, {
+    style: f => isCD(keyOf(f.properties)[0]) ? baseStyle(turnout[keyOf(f.properties)[0]]) : JIA_STYLE,
+    onEachFeature: (feature, layer) => {
+      const [key, bName, distN] = keyOf(feature.properties);
+      layer._cdKey = key;
+      if (!isCD(key)) {
+        layer.bindPopup(`<div class="popup-name">Park or airport</div>
+          <div class="popup-sub">A Joint Interest Area: not part of any community district, so no turnout is shown.</div>`);
+        return;
+      }
+      layerByKey[key] = layer;
+      geometryByKey[key] = feature;
+      layer.bindPopup(() => popupHTML(bName, distN, key, artworkReady === true ? (artworkCache[key] || []).length : undefined), { autoPan: false });  // never shift the centred district
+      layer.on('mouseover', () => { if (_selectedLayer !== layer) layer.setStyle({ fillColor: HOVER, fillOpacity: 1 }); });
+      layer.on('mouseout',  () => { layer.setStyle(restStyle(layer)); });
+      layer.on('click', e => {
+        L.DomEvent.stopPropagation(e);   // a district click is not a click on the water
+        zoomToCD(layer, bName, distN, key);
+        document.querySelectorAll('.dist-row').forEach(r => r.classList.remove('active'));
+        const row = document.querySelector(`.dist-row[data-key="${key}"]`);
+        if (row) { row.classList.add('active'); row.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+      });
+    }
   }).addTo(map);
-  statusEl.textContent = 'Loading artwork…';
-  prefetchAllArtwork();
+  openView();
+  window.addEventListener('resize', () => { map.invalidateSize(); if (!_selectedLayer) openView(); });
 }
 
-function tryLoad(sources) {
-  if (!sources.length) { statusEl.textContent = 'All sources failed'; return; }
-  fetch(sources[0])
-    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-    .then(data => {
-      if (!(data.features||[]).length) throw new Error('empty');
-      try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch(e) {}
-      renderCDs(data);
-    })
-    .catch(() => tryLoad(sources.slice(1)));
+// Every district in view at once; zooming out further is not allowed
+function fitCity() {
+  const b = cdGeo.getBounds();
+  map.setMinZoom(0);
+  map.fitBounds(b, { padding: [4, 4], animate: false });
+  map.setMinZoom(map.getZoom());
+  map.setMaxBounds(b.pad(0.25));
+}
+function openView() {
+  fitCity();   // all five boroughs in view
+}
+// Clicking the water (anywhere that is not a district or an artwork), or pressing Esc, shows the whole city again
+map.on('click', () => { if (_selectedLayer || sourceFilter) showSourceCitywide(null); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && (_selectedLayer || sourceFilter)) showSourceCitywide(null); });
+
+// Four colours as far apart as possible, none dark and none near the map's greens
+const SOURCE_COLOR = {
+  'OpenStreetMap': '#FF2A2A',             // bright red
+  'Public Design Commission': '#FFB38A',  // peach
+  'DOT Art': '#FF4FD8',                   // magenta pink, well apart from the red
+  'Percent for Art': '#00E5D4'            // hot turquoise
+};
+const SOURCE_CLASS = { 'OpenStreetMap': 'art-osm', 'Public Design Commission': 'art-pdc', 'DOT Art': 'art-dot', 'Percent for Art': 'art-pct' };
+let sourceFilter = null;   // a source chosen in the key: its art across the whole city
+document.querySelectorAll('#artkey button').forEach(b => {
+  b.querySelector('i').style.background = SOURCE_COLOR[b.dataset.src];
+  b.addEventListener('click', () => showSourceCitywide(sourceFilter === b.dataset.src ? null : b.dataset.src));
+});
+function markKey() {
+  document.querySelectorAll('#artkey button').forEach(b => b.setAttribute('aria-pressed', b.dataset.src === sourceFilter));
+}
+function artDot(lat, lon, source, r = 9) {
+  const m = L.circleMarker([lat, lon], { radius: r, fillColor: SOURCE_COLOR[source], stroke: false, fillOpacity: 1, pane: 'artPane', className: SOURCE_CLASS[source] });
+  m.on('mouseover', () => m.setRadius(r * 1.4));
+  m.on('mouseout',  () => m.setRadius(r));
+  m.on('click', e => L.DomEvent.stopPropagation(e));
+  m._r = r;
+  m.on('popupopen',  () => { chosenArt = m; });
+  m.on('popupclose', () => { if (chosenArt === m) chosenArt = null; });
+  return m;
+}
+let chosenArt = null;   // the art dot whose details are open: it alone breathes in the yellow cloud
+function osmDot(el, r) {
+  const tags = el.tags || {};
+  const name = tags.name || tags['name:en'] || 'Untitled';
+  const artist = tags['artist:name'] || tags.artist_name || '';
+  const m = artDot(el.lat, el.lon, 'OpenStreetMap', r);
+  m.bindTooltip(name === 'Untitled' ? 'Untitled artwork · click for details' : `${name} · click for details`, { direction: 'top', offset: [0, -8], className: 'art-tip' });
+  m.bindPopup(`<div class="popup-name">${name}</div>
+    ${artist ? `<div>Artist: ${artist}</div>` : ''}
+    <div class="popup-sub">${tags.artwork_type || 'artwork'} · mapped by volunteers on OpenStreetMap</div>
+    <div class="popup-sub popup-link"><a href="https://www.openstreetmap.org/node/${el.id}" target="_blank" rel="noopener">See or fix this point on OpenStreetMap ↗</a></div>`);
+  return m;
+}
+function cityDot(a, r) {
+  const m = artDot(a.lat, a.lon, a.source, r);
+  m.bindTooltip(`${a.name || 'Untitled'} · click for details`, { direction: 'top', offset: [0, -8], className: 'art-tip' });
+  m.bindPopup(`<div class="popup-name">${a.name || 'Untitled'}</div>
+    ${a.artist ? `<div>Artist: ${a.artist}</div>` : ''}
+    <div class="popup-sub">${a.detail}</div>
+    <div class="popup-sub">City record: ${a.source}</div>`);
+  return m;
+}
+// One source, every district, zoomed out. Choosing a district afterwards brings back all sources there.
+function showSourceCitywide(src) {
+  sourceFilter = src; markKey();
+  map.closePopup(); _selectedLayer = null; _selectedKey = null; updateBoardLink(); _current = null;
+  if (artLayer) { map.removeLayer(artLayer); artLayer = null; }
+  cdGeo.eachLayer(l => l.setStyle(restStyle(l)));
+  document.querySelectorAll('.dist-row').forEach(r => r.classList.remove('active'));
+  map.flyToBounds(cdGeo.getBounds(), { padding: [4, 4], duration: 0.5 });
+  if (!src) return;
+  artLayer = L.layerGroup();
+  const cache = src === 'OpenStreetMap' ? artworkCache : cityArtCache;
+  for (const list of Object.values(cache)) for (const item of list) {
+    if (src === 'OpenStreetMap') artLayer.addLayer(osmDot(item.el, 4));
+    else if (item.source === src) artLayer.addLayer(cityDot(item, 4));
+  }
+  artLayer.addTo(map);
 }
 
-// ── Mosaic palette — extracted from Hilma's Ghost (CUNY collective) ───────
-// Grand Central Madison station · colors sampled directly from the mosaic image
-// Hue balance: blues/purples dominant · warm reds/golds right · greens/teals left
-const mosaicHues = [
-  // Blues — dominant field color
-  '#1E3A8F', '#2D58A8', '#4A7BC4', '#6B9FD8', '#7B85C8',
-  // Purples / blue-violets — second most prominent
-  '#4A2D7A', '#6B4E9E', '#8B70B8', '#9B85C4', '#7B5A9E',
-  // Reds / coral — left panel and accents
-  '#C42828', '#D44830', '#C46848',
-  // Oranges / amber — right panel
-  '#D87828', '#E89838', '#F0A840',
-  // Golds / yellows — triangle shapes and borders
-  '#C89818', '#D8B428', '#E8CC38', '#F0D848',
-  // Greens — left field and geometric shapes
-  '#1B4B2E', '#2E7A4A', '#4A9860', '#5AAB78',
-  // Teals — mid-ground accents
-  '#1E6A68', '#2E8A88', '#48A8A0',
-  // Pinks / mauve / rose — scattered accents
-  '#C85880', '#B8789A', '#D898B8', '#9B6888',
-  // Warm taupe / neutral — floor and architectural elements
-  '#8B7868'
-];
-
-function artworkColor(index) {
-  return mosaicHues[index % mosaicHues.length];
-}
-
-// ── Dedicated pane so artwork always renders above CD polygons ────────────
+// Dedicated pane so artwork always renders above the districts
 map.createPane('artPane');
 map.getPane('artPane').style.zIndex = 450;
 
-// ── Popup HTML builder ────────────────────────────────────────────────────
-function popupHTML(bName, distN, t, artCount) {
-  const artLine = artCount === null
-    ? `<div class="popup-sub" style="color:#666">Artwork data unavailable</div>`
+// ── District popup ─────────────────────────────────────────────────────────
+function popupHTML(bName, distN, key, artCount) {
+  const t = turnout[key];
+  const city = current && current.citywide != null
+    ? `<span class="popup-sub"> · citywide ${pct(current.citywide)}</span>` : '';
+  const artLine = artCount === undefined
+    ? `<div class="popup-sub" style="color:#888">Artwork still loading…</div>`
     : artCount === 0
-      ? `<div>Public Artwork Reported: <strong>0</strong> <span class="popup-sub">(none recorded in OSM)</span></div>`
-      : `<div>Public Artwork Reported: <strong>${artCount}</strong></div>`;
+      ? `<div>Mapped by volunteers: <strong>0</strong></div>`
+      : `<div>Mapped by volunteers: <strong>${artCount}</strong></div>`;
+  const nCity = cityArtReady ? (cityArtCache[key] || []).length : null;
+  const cityLine = nCity === null ? '' : `<div>In city records: <strong>${nCity}</strong></div>`;
   return `
-    <div class="popup-name">${bName} CD ${distN}</div>
-    <div>Voter Turnout: <strong>${(t*100).toFixed(1)}%</strong> <span class="popup-sub">2023 General Election · off-year</span></div>
+    <div class="popup-name">${bName} Community District ${distN}</div>
+    <div>Turnout: <strong>${t != null ? pct(t) : 'not reported'}</strong>${city}</div>
+    <div class="popup-sub">${current ? electionLabel(current) : ''}</div>
     ${artLine}
-  `;
+    ${cityLine}
+    <div class="popup-sub" style="color:#ccc">Point at a dot to see what it is.</div>
+    <div class="popup-sub popup-link"><a href="https://communityprofiles.planning.nyc.gov/${boroSlug[key.slice(0, 2)]}/${distN}" target="_blank" rel="noopener">District profile &amp; community board ↗</a></div>`;
 }
 
-// ── Global artwork store ──────────────────────────────────────────────────
-const artworkCache  = {};  // key → [{el, colorIdx}]
-const geometryByKey = {};  // key → GeoJSON feature (for point-in-polygon)
-let   artworkReady  = false;
-let   artLayer      = null;
+// ── Artwork ────────────────────────────────────────────────────────────────
+const artworkCache = {};   // key → [{el, colorIdx}]
+let artworkReady = false, artLayer = null, _current = null;
+const ART_QUERY = '[out:json][timeout:25];node["tourism"="artwork"](40.4774,-74.2591,40.9176,-73.7004);out body;';
 
-function prefetchAllArtwork() {
-  const query = `[out:json][timeout:60];node["tourism"="artwork"](40.4774,-74.2591,40.9176,-73.7004);out body;`;
-  const enc   = encodeURIComponent(query);
-  const srcs  = [
-    `https://overpass-api.de/api/interpreter?data=${enc}`,
-    `https://overpass.kumi.systems/api/interpreter?data=${enc}`,
-    `https://maps.mail.ru/osm/tools/overpass/api/interpreter?data=${enc}`
-  ];
-  function tryNext(list) {
-    if (!list.length) { artworkReady = 'failed'; return; }
-    fetch(list[0])
-      .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(data => {
-        const els = (data.elements || []).filter(e => e.lat && e.lon);
-        let globalIdx = 0;
-        els.forEach(el => {
-          const pt = turf.point([el.lon, el.lat]);
-          for (const [key, geom] of Object.entries(geometryByKey)) {
-            if (turf.booleanPointInPolygon(pt, geom)) {
-              if (!artworkCache[key]) artworkCache[key] = [];
-              artworkCache[key].push({ el, colorIdx: globalIdx++ });
-              break;
-            }
-          }
-        });
-        artworkReady = true;
-        statusEl.textContent = `${els.length} artwork locations ready`;
-        setTimeout(() => statusEl.style.display = 'none', 2000);
-      })
-      .catch(err => { console.warn('Overpass failed:', list[0], err.message); tryNext(list.slice(1)); });
-  }
-  tryNext(srcs);
-}
-
-function showArtworkForCD(cdLayer, key, bName, distN, t) {
-  if (artLayer) { map.removeLayer(artLayer); artLayer = null; }
-  if (!artworkReady || artworkReady === 'failed') {
-    cdLayer.setPopupContent(popupHTML(bName, distN, t, artworkReady ? null : undefined) +
-      (artworkReady ? '' : `<div class="popup-sub" style="color:#888">Artwork still loading…</div>`));
-    return;
-  }
-  const els = artworkCache[key] || [];
-  artLayer = L.layerGroup();
-  els.forEach(({ el, colorIdx }) => {
-    const tags   = el.tags || {};
-    const name   = tags.name || tags['name:en'] || 'Untitled';
-    const artist = tags['artist:name'] || tags.artist_name || '';
-    const type   = tags.artwork_type || 'artwork';
-    const m = L.circleMarker([el.lat, el.lon], {
-      radius: 6, fillColor: artworkColor(colorIdx), color: '#111',
-      weight: 0.8, fillOpacity: 0.95, pane: 'artPane'
-    });
-    m.bindPopup(`
-      <div class="popup-name">${name}</div>
-      ${artist ? `<div style="color:#aaa;font-size:.7rem">Artist: ${artist}</div>` : ''}
-      <div class="popup-sub">${type} · OSM tourism=artwork</div>
-    `);
-    artLayer.addLayer(m);
+function indexArtwork(data) {
+  const els = (data.elements || []).filter(e => e.lat && e.lon);
+  for (const k in artworkCache) delete artworkCache[k];
+  let globalIdx = 0;
+  els.forEach(el => {
+    const pt = turf.point([el.lon, el.lat]);
+    for (const [key, geom] of Object.entries(geometryByKey)) {
+      if (turf.booleanPointInPolygon(pt, geom)) {
+        (artworkCache[key] = artworkCache[key] || []).push({ el, colorIdx: globalIdx++ });
+        break;
+      }
+    }
   });
+  artworkReady = true;
+  if (typeof rebuildRippleDots === 'function') rebuildRippleDots();
+  return els.length;
+}
+
+function loadArtwork() {
+  // 1) The saved copy: always works. Same query, run November 23, 2026.
+  fetch('data/osm_artwork.json')
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(data => {
+      const n = indexArtwork(data);
+      fitIntro();
+      statusEl.style.display = 'none';
+      if (_current) showArtworkForCD(..._current);
+      tryLiveArtwork();
+    })
+    .catch(() => { artworkReady = 'failed'; statusEl.textContent = 'Artwork could not load'; });
+}
+
+function tryLiveArtwork() {
+  // 2) Today's OpenStreetMap, if the shared server answers within 20 seconds. If not, the saved copy stays.
+  const ctrl = new AbortController();
+  setTimeout(() => ctrl.abort(), 20000);
+  fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: 'data=' + encodeURIComponent(ART_QUERY), signal: ctrl.signal })
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(data => {
+      if (!(data.elements || []).length) throw new Error('empty');
+      const n = indexArtwork(data);
+      if (_current) showArtworkForCD(..._current); else if (sourceFilter) showSourceCitywide(sourceFilter);
+    })
+    .catch(err => console.info('Live OpenStreetMap not reached; using the saved copy.', err.message));
+}
+
+function showArtworkForCD(cdLayer, key, bName, distN) {
+  _current = [cdLayer, key, bName, distN];
+  if (artLayer) { map.removeLayer(artLayer); artLayer = null; }
+  if (artworkReady !== true) { cdLayer.setPopupContent(popupHTML(bName, distN, key, undefined)); return; }
+  const els = artworkCache[key] || [];
+  sourceFilter = null; markKey();
+  artLayer = L.layerGroup();
+  els.forEach(({ el }) => artLayer.addLayer(osmDot(el, 9)));
+  (cityArtCache[key] || []).forEach(a => artLayer.addLayer(cityDot(a, 9)));
   artLayer.addTo(map);
-  cdLayer.setPopupContent(popupHTML(bName, distN, t, els.length));
+  cdLayer.setPopupContent(popupHTML(bName, distN, key, els.length));
 }
 
-// ── Selected CD tracking ─────────────────────────────────────────────────
-let _selectedLayer = null;
-let _selectedKey   = null;
+// ── The city's own records of public art ──────────────────────────────────
+const CITY_ART = [
+  { id: '2pg3-gcaa', file: 'data/city_art_pdc.json', source: 'Public Design Commission',
+    norm: r => ({ name: r.title, artist: [r.primary_artist_first, r.primary_artist_last].filter(x => x && x !== 'NULL').join(' '),
+                  place: r.location_name !== 'NULL' ? r.location_name || '' : '',
+                  detail: [r.artwork_type1 !== 'NULL' && r.artwork_type1, r.date_dedicated && r.date_dedicated !== 'NULL' && `dedicated ${r.date_dedicated}`, r.managing_city_agency].filter(Boolean).join(' · ') }) },
+  { id: '3r2x-bnmj', file: 'data/city_art_dot.json', source: 'DOT Art',
+    norm: r => ({ name: r.title, artist: r.artist || '', place: (r.site_location || '').split(/ between /i)[0],
+                  detail: [r.project_type, r.installation && r.removal ? `${r.installation.slice(0, 4)}–${r.removal.slice(0, 4)}, temporary` : r.year, r.program_initiative].filter(Boolean).join(' · ') }) },
+  { id: 'gzdv-qiga', file: 'data/percent_for_art.json', source: 'Percent for Art', geocode: true,
+    norm: r => ({ name: `Artwork at ${r.percent_project}`, artist: flipName(r.artist || ''), place: r.percent_project || '',
+                  detail: [r.address, r.sponsor_agency && `for ${r.sponsor_agency}`].filter(Boolean).join(' · ') }) }
+];
+// "Jaudon, Valerie" → "Valerie Jaudon" (only for a single "Last, First"; teams and firms stay as written)
+function flipName(n) { const p = n.split(', '); return p.length === 2 && !/[&;]| and /i.test(n) ? `${p[1]} ${p[0]}` : n; }
+// Percent for Art lists addresses, not coordinates. Saved lookups come from tools/geocode_percent_for_art.py;
+// any address not saved yet (a new project) is looked up live with NYC GeoSearch, City Planning's address finder.
+const addrKey = r => ['address', 'borough2', 'zip_code'].map(k => (r[k] || '').trim()).join(' | ');
+let savedGeocodes = null;
+async function placeByAddress(rows) {
+  if (!savedGeocodes) savedGeocodes = await fetch('data/percent_for_art_geocodes.json').then(r => r.json()).catch(() => ({}));
+  const missing = [...new Set(rows.map(addrKey).filter(k => k.split(' | ')[0] && !(k in savedGeocodes)))].slice(0, 40);
+  await Promise.all(missing.map(async k => {
+    const [a, b, z] = k.split(' | ');
+    try {
+      const f = (await (await fetch('https://geosearch.planninglabs.nyc/v2/search?size=1&text=' + encodeURIComponent(`${a}, ${b} ${z}`))).json()).features;
+      savedGeocodes[k] = f && f.length ? [f[0].geometry.coordinates[1], f[0].geometry.coordinates[0]] : null;
+    } catch (e) { /* stays off the map this visit */ }
+  }));
+  return rows.map(r => { const c = savedGeocodes[addrKey(r)]; return c ? { ...r, latitude: c[0], longitude: c[1] } : r; });
+}
+const cityArtCache = {};   // key → [{lat, lon, name, artist, detail, source}]
+let cityArtReady = false;
 
-function selectCD(layer, key, t) {
-  // Reset previous selection to its greyscale colour
-  if (_selectedLayer && _selectedLayer !== layer) {
-    const prevT = turnout[_selectedKey] || 0.10;
-    _selectedLayer.setStyle({ fillColor: grey(prevT), fillOpacity: 0.85, weight: 1 });
+async function getRecords(src) {
+  const ctrl = new AbortController(); setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const where = src.geocode ? '' : '&$where=latitude IS NOT NULL';
+    const r = await fetch(`https://data.cityofnewyork.us/resource/${src.id}.json?$limit=5000${where}`, { signal: ctrl.signal });
+    if (!r.ok) throw new Error(r.status);
+    return { rows: await r.json(), live: true };
+  } catch (e) {
+    return { rows: await (await fetch(src.file)).json(), live: false };   // saved copy
   }
-  layer.setStyle({ fillColor: '#b9859c', fillOpacity: 0.9, weight: 1.5 });
-  _selectedLayer = layer;
-  _selectedKey   = key;
+}
+async function loadCityArt() {
+  let n = 0, live = true;
+  for (const src of CITY_ART) {
+    const got = await getRecords(src);
+    live = live && got.live;
+    if (src.geocode) got.rows = await placeByAddress(got.rows);
+    for (const r of got.rows) {
+      const lat = +r.latitude, lon = +r.longitude;
+      if (!lat || !lon) continue;
+      const pt = turf.point([lon, lat]);
+      for (const [key, geom] of Object.entries(geometryByKey)) {
+        if (turf.booleanPointInPolygon(pt, geom)) {
+          (cityArtCache[key] = cityArtCache[key] || []).push({ lat, lon, source: src.source, ...src.norm(r) });
+          n++; break;
+        }
+      }
+    }
+  }
+  cityArtReady = true;
+  rebuildRippleDots();
+  fitIntro();
+  if (_current) showArtworkForCD(..._current); else if (sourceFilter) showSourceCitywide(sourceFilter);
 }
 
-// ── Zoom to a CD, popup above the CD so it doesn't cover artwork ──────────
+// ── Names: the artists keep speaking up; turnout keeps settling back to what it is ──
+// Every so often a ring spreads from one artwork. The district it sits in brightens toward green
+// (what public art could do), then returns to its real grey (what the data shows).
+const rippleCanvas = document.createElement('canvas');
+rippleCanvas.id = 'ripples';
+rippleCanvas.setAttribute('aria-hidden', 'true');   // decoration: the names and colours are also in the lists
+// in its own map layer, above the districts and below popups, so a popup is never covered
+map.createPane('ripplePane');
+map.getPane('ripplePane').style.zIndex = 420;
+map.getPane('ripplePane').style.pointerEvents = 'none';
+map.getPane('ripplePane').appendChild(rippleCanvas);
+const rctx = rippleCanvas.getContext('2d');
+const stillOnly = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const GLOW_TO = '#00A86B', LIFE = 5200, REACH = 46, EVERY = 900, MAX_TITLES = 6, HALO = 30;
+let rippleDots = [], lastSpawn = 0;
+const titles = [], glowing = new Set();
+// the art titles use the same type as the small notes in the side columns
+// same typeface as the small notes in the side columns, regular weight, a few points bigger
+const TITLE_PX = parseFloat(getComputedStyle(document.querySelector('.block .note')).fontSize) + 3.5;
+const TITLE_FAMILY = getComputedStyle(document.querySelector('.block .note')).fontFamily;
+const TITLE_FONT = `400 ${TITLE_PX}px ${TITLE_FAMILY}`;
+const TITLE_GROW = matchMedia('(max-width: 760px)').matches ? 1.6 : 2.4;   // a name ends this many times its starting size, swelling as it fades (less on a phone's narrow map)
+// how big a name is, and how far along its way, at a point p (0 to 1) of its life
+const titleScale = p => 1 + (TITLE_GROW - 1) * p * p;   // slow at first, swelling at the end
+const titleEase  = p => 1 - Math.pow(1 - p, 2);
+const TITLE_MAX = matchMedia('(max-width: 760px)').matches ? 3 : MAX_TITLES;   // a phone's small map holds fewer names
+
+function sizeCanvas() {
+  const s = map.getSize(), r = window.devicePixelRatio || 1;
+  rippleCanvas.width = s.x * r; rippleCanvas.height = s.y * r;
+  rippleCanvas.style.width = s.x + 'px'; rippleCanvas.style.height = s.y + 'px';
+  rctx.setTransform(r, 0, 0, r, 0, 0);
+  project();
+}
+function project() { rippleDots.forEach(d => { d.p = map.latLngToContainerPoint(d.ll); }); }
+map.on('resize', sizeCanvas);
+map.on('move zoom viewreset', project);
+
+// what rises from a dot: "Artist, location" (nothing when the artist isn't recorded)
+function artistAt(artist, place) { return artist ? (place ? `${artist}, ${place}` : artist) : ''; }
+function rebuildRippleDots() {
+  rippleDots = [];
+  for (const [key, list] of Object.entries(artworkCache)) list.forEach(({ el }) => {
+    const t = el.tags || {};
+    const artist = t['artist_name'] || t['artist:name'] || '';
+    const place = isCD(key) ? `${boroOfKey[key.slice(0, 2)]} ${parseInt(key.slice(2))}` : '';
+    rippleDots.push({ ll: L.latLng(el.lat, el.lon), color: SOURCE_COLOR['OpenStreetMap'], key, source: 'OpenStreetMap', name: artistAt(artist, place) });
+  });
+  for (const [key, list] of Object.entries(cityArtCache)) list.forEach(a =>
+    rippleDots.push({ ll: L.latLng(a.lat, a.lon), color: SOURCE_COLOR[a.source], key, source: a.source, name: artistAt(a.artist, a.place) }));
+  project();
+}
+function mixToward(rgb, hex, a) {
+  const g = +((rgb.match(/\d+/) || [128])[0]);
+  return 'rgb(' + [1, 3, 5].map(i => Math.round(g + (parseInt(hex.substr(i, 2), 16) - g) * a)).join(',') + ')';
+}
+function settle() {   // every glowing district back to its real grey
+  glowing.forEach(k => { const l = layerByKey[k]; if (l) l.setStyle(restStyle(l)); });
+  glowing.clear();
+}
+// the dots on screen right now: a chosen district's, a chosen source's, or all of them
+function onScreen() {
+  const s = map.getSize();
+  return rippleDots.filter(d => d.p && d.p.x >= 0 && d.p.y >= 0 && d.p.x <= s.x && d.p.y <= s.y &&
+    (_selectedKey ? d.key === _selectedKey : sourceFilter ? d.source === sourceFilter : true));
+}
+
+// one yellow polka-dot cloud, drawn once, then stamped under each chosen dot
+const haloSprite = (() => {
+  const r = window.devicePixelRatio || 1, c = document.createElement('canvas');
+  c.width = c.height = HALO * r;
+  const g = c.getContext('2d'); g.scale(r, r);
+  g.fillStyle = HOVER;
+  for (let x = 2; x < HALO; x += 4) for (let y = 2; y < HALO; y += 4) { g.beginPath(); g.arc(x, y, 1.1, 0, 6.2832); g.fill(); }
+  g.globalCompositeOperation = 'destination-in';   // fade the dots out toward the edge
+  const f = g.createRadialGradient(HALO / 2, HALO / 2, 0, HALO / 2, HALO / 2, HALO / 2);
+  f.addColorStop(0.45, '#000'); f.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = f; g.fillRect(0, 0, HALO, HALO);
+  return c;
+})();
+// which district is under this spot on screen (null = open water)?
+function groundAt(x, y) {
+  const ll = map.containerPointToLatLng([x, y]);
+  let found = null;
+  cdGeo.eachLayer(l => { if (!found && l.getBounds().contains(ll) && turf.booleanPointInPolygon([ll.lng, ll.lat], l.feature)) found = l; });
+  return found;
+}
+// of 16 directions and 3 distances, where the title lands on the plainest ground:
+// open water best, then one flat grey; district edges, the chosen green district and other dots are busy
+function calmestWay(d, label, dots) {
+  const s = map.getSize(), w = rctx.measureText(label).width;
+  let best = null, bestScore = Infinity;
+  for (const reach of [REACH * 0.8, REACH * 1.2, REACH * 1.7]) for (let k = 0; k < 16; k++) {
+    const ang = k * Math.PI / 8, dx = Math.cos(ang), dy = Math.sin(ang);
+    const ex = d.p.x + dx * reach, ey = d.p.y + dy * reach;
+    const left = dx > 0.3 ? ex : dx < -0.3 ? ex - w : ex - w / 2;   // the text grows away from its dot
+    if (left < 4 || left + w > s.x - 4 || ey < 10 || ey > s.y - 10) continue;
+    // sample the label's footprint: its two ends, middle, and just above and below
+    const spots = [[left, ey], [left + w / 2, ey], [left + w, ey], [left + w / 2, ey - 7], [left + w / 2, ey + 7]];
+    const grounds = spots.map(([x, y]) => groundAt(x, y));
+    let score = 0;
+    grounds.forEach(g => { score += !g ? 0 : g === _selectedLayer ? 8 : 4; });
+    score += (new Set(grounds).size - 1) * 6;   // crossing district edges reads as clutter
+    for (const o of dots) if (o !== d && o.p.x > left - 8 && o.p.x < left + w + 8 && Math.abs(o.p.y - ey) < 10) score += 2;
+    // never cross another name still in the air: compare where each starts, travels and ends, at the size it is then
+    const path = [0, 0.5, 0.8, 1].map(t => {
+      const k = titleScale(t), ww = w * k, r = 8 + (reach - 8) * titleEase(t), x = d.p.x + dx * r;
+      const l = dx > 0.3 ? x : dx < -0.3 ? x - ww : x - ww / 2;
+      return { l, r: l + ww, y: d.p.y + dy * r, h: TITLE_PX * k };
+    });
+    const hit = (a, b) => Math.abs(a.y - b.y) < (a.h + b.h) / 2 + 4 && a.l < b.r + 8 && a.r > b.l - 8;
+    const end = path[path.length - 1];
+    if (end.l < 4 || end.r > s.x - 4) continue;   // stay on the map even at full size, so no name is cut off
+    if (titles.some(o => o.path && path.some(a => o.path.some(b => hit(a, b))))) continue;
+    score += reach / REACH * 0.8 - dy * 0.3;   // all else equal: stay close, and rise
+    if (score < bestScore) { bestScore = score; best = { dx, dy, reach, path }; }
+  }
+  return best;   // null: no clear landing right now, so this name waits
+}
+function drawHalos(t, dots, scale) {
+  dots.forEach((d, i) => {
+    const b = stillOnly ? 0.5 : 0.5 + 0.5 * Math.sin(t / 1800 * 6.2832 + i * 0.7);   // each dot breathes a little out of step
+    const size = HALO * scale * (0.75 + 0.5 * b);
+    rctx.globalAlpha = 0.6 + 0.4 * b;
+    rctx.drawImage(haloSprite, d.p.x - size / 2, d.p.y - size / 2, size, size);
+  });
+  rctx.globalAlpha = 1;
+}
+
+function frame(t) {
+  requestAnimationFrame(frame);
+  const s = map.getSize();
+  L.DomUtil.setPosition(rippleCanvas, map.containerPointToLayerPoint([0, 0]));   // keep the canvas over the visible map while panning
+  rctx.clearRect(0, 0, s.x, s.y);
+  const dots = onScreen();
+  // all the art, small and still, when nothing is chosen (a choice draws its own, bigger dots)
+  if (!sourceFilter && !_selectedLayer) {
+    rctx.globalAlpha = 0.9;
+    for (const d of dots) { rctx.fillStyle = d.color; rctx.beginPath(); rctx.arc(d.p.x, d.p.y, 2.2, 0, 6.2832); rctx.fill(); }
+    rctx.globalAlpha = 1;
+  }
+  // the chosen art dot breathes inside a yellow cloud
+  if (chosenArt && map.hasLayer(chosenArt)) drawHalos(t, [{ p: map.latLngToContainerPoint(chosenArt.getLatLng()) }], Math.max(1, chosenArt._r / 5));
+  if (stillOnly) return;
+
+  // titles drift out of their dots, one after another, then fade
+  const named = dots.filter(d => d.name && !titles.some(x => x.d === d));
+  rctx.font = TITLE_FONT;
+  if (named.length && t - lastSpawn > EVERY && titles.length < TITLE_MAX) {
+    const d = named[Math.floor(Math.random() * named.length)];
+    const label = d.name.length > 52 ? d.name.slice(0, 50) + '…' : d.name;
+    const way = calmestWay(d, label, dots);
+    if (way) { titles.push({ d, label, born: t, ...way }); lastSpawn = t; }
+  }
+  const glow = {};
+  rctx.textBaseline = 'middle';
+  rctx.shadowColor = 'rgba(0,0,0,0.9)'; rctx.shadowBlur = 4;
+  for (let i = titles.length - 1; i >= 0; i--) {
+    const g = titles[i], p = (t - g.born) / LIFE;
+    if (p >= 1 || !g.d.p) { titles.splice(i, 1); continue; }
+    const e = titleEase(p), a = Math.sin(Math.PI * p);
+    rctx.font = `400 ${(TITLE_PX * titleScale(p)).toFixed(1)}px ${TITLE_FAMILY}`;   // grows as it fades
+    rctx.globalAlpha = a;
+    rctx.fillStyle = g.d.color;
+    rctx.textAlign = g.dx > 0.3 ? 'left' : g.dx < -0.3 ? 'right' : 'center';
+    const reach = 8 + (g.reach - 8) * e;   // starts just off the dot, flows out to open ground
+    rctx.fillText(g.label, g.d.p.x + g.dx * reach, g.d.p.y + g.dy * reach);
+    if (!_selectedLayer && isCD(g.d.key) && turnout[g.d.key] != null) glow[g.d.key] = Math.max(glow[g.d.key] || 0, a * 0.5);
+  }
+  rctx.shadowBlur = 0; rctx.globalAlpha = 1;
+  // as a title rises, its district warms toward emerald, then settles back to its real grey
+  if (_selectedLayer) { if (glowing.size) settle(); return; }
+  for (const [k, a] of Object.entries(glow)) {
+    const l = layerByKey[k]; if (!l) continue;
+    l.setStyle({ fillColor: mixToward(restStyle(l).fillColor, GLOW_TO, a) });
+    glowing.add(k);
+  }
+  glowing.forEach(k => { if (!(k in glow)) { const l = layerByKey[k]; if (l) l.setStyle(restStyle(l)); glowing.delete(k); } });
+}
+function startRipples() { sizeCanvas(); requestAnimationFrame(frame); }
+
+// ── Choosing a district ────────────────────────────────────────────────────
+function selectCD(layer, key) {
+  _selectedLayer = layer; _selectedKey = key; updateBoardLink();
+  cdGeo.eachLayer(l => l.setStyle(restStyle(l)));
+}
 let _zoomTarget = null;
-function zoomToCD(layer, bName, distN, t, key) {
+function zoomToCD(layer, bName, distN, key) {
   _zoomTarget = layer;
   map.closePopup();
-  selectCD(layer, key, t);
-  showArtworkForCD(layer, key, bName, distN, t);
-
-  // Open popup at north-centre of CD bounds so it floats above the artwork
-  const bounds    = layer.getBounds();
-  const popupLatLng = L.latLng(bounds.getNorth(), bounds.getCenter().lng);
-
+  selectCD(layer, key);
+  showArtworkForCD(layer, key, bName, distN);
+  // Centre the district; equal space above and below leaves room for the popup at its top edge
+  const bounds = layer.getBounds();
   map.once('moveend', () => {
     if (_zoomTarget !== layer) return;
-    layer.openPopup(popupLatLng);
-    // Pan so popup is fully visible above the CD
-    requestAnimationFrame(() => {
-      const popupEl = document.querySelector('.leaflet-popup');
-      if (popupEl) {
-        const popupH = popupEl.offsetHeight + 30;
-        map.panBy([0, -(popupH)], { animate: true, duration: 0.25 });
-      }
-    });
+    layer.openPopup(L.latLng(bounds.getNorth(), bounds.getCenter().lng));
   });
-  map.setView(bounds.getCenter(), 13, { animate: true });
+  map.fitBounds(bounds, { padding: [40, 170], maxZoom: 14, animate: true });
 }
 
-// Load from cache instantly; fetch fresh copy in background
-const cached = (() => { try { const d = localStorage.getItem(CACHE_KEY); return d ? JSON.parse(d) : null; } catch(e) { return null; } })();
-if (cached) {
-  renderCDs(cached);
-  fetch(SOURCES[0]).then(r => r.ok ? r.json() : null).then(d => {
-    if (d && (d.features||[]).length) try { localStorage.setItem(CACHE_KEY, JSON.stringify(d)); } catch(e) {}
-  }).catch(() => {});
-} else {
-  tryLoad(SOURCES);
-}
+// ── Start: boundaries + saved turnout together, then artwork, then check for newer data
+Promise.all([fetch('data/community_districts_web.geojson').then(r => r.json()), savedTurnout])
+  .then(([cds, newest]) => {
+    showElection(newest);
+    renderCDs(cds);
+    document.body.classList.add('ready');   // map and district list appear together
+    startRipples();
+    statusEl.textContent = 'Loading artwork…';
+    loadArtwork();
+    loadCityArt();
+    checkForNewerElection().catch(err => console.info('Could not check NYC Open Data for a newer election; showing the saved data.', err.message));
+  })
+  .catch(err => { statusEl.textContent = 'Could not load the map data'; console.error(err); });
 </script>
 </body>
 </html>
