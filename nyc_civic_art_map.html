@@ -132,7 +132,9 @@
     #map .leaflet-pane, #district-list { opacity: 0; transition: opacity 0.5s ease; }
     body.ready #map .leaflet-pane, body.ready #district-list { opacity: 1; }
     /* Narrow screens (phones): the three columns stack: words, then map, then turnout and districts */
+    .small-screen-note { display: none; }
     @media (max-width: 760px) {
+      .small-screen-note { display: block; font-size: 0.85em; color: #999; margin-bottom: 8px; }
       #body { flex-direction: column; }
       #info, #keycol { width: auto !important; height: auto !important; }
       #info { border-right: none; border-bottom: 1px solid #2a2a2a; }
@@ -181,6 +183,7 @@
 <div id="body">
   <div id="info">
     <div class="intro block" id="intro">
+      <p class="small-screen-note">Best explored on a larger screen.</p>
       <p class="ask"><mark>What would it take for you to imagine a different future, and help make it?</mark></p>
       <p>Our lives and our democracy run on technology built by a few private companies designed for profit. Artists have long instigated change by helping to envision alternate futures to those that otherwise feel inevitable. I believe Public Art can have a direct impact on public democracy, and that it might ignite the reimagining and rebuilding we need.</p>
       <p>This visualization on purpose doesn’t show any connection between public art and civic engagement; it uses both open data sets to propose art as one way forward when it’s hard to see where we are going. Turnout is shaped by oppression, racism, poverty, weak labor protections, and whether people believe they have power. Art can expose that; changed minds and votes change it.</p>
@@ -925,7 +928,14 @@ function zoomToCD(layer, bName, distN, key) {
     if (_zoomTarget !== layer) return;
     layer.openPopup(L.latLng(bounds.getNorth(), bounds.getCenter().lng));
   });
-  map.fitBounds(bounds, { padding: [40, 170], maxZoom: 14, animate: true });
+  // On phones the map is short, so fixed padding left no room for the district. Scale it to the map's size,
+  // with more room on top for the popup and less below.
+  if (window.matchMedia('(max-width: 760px)').matches) {
+    const sz = map.getSize();
+    map.fitBounds(bounds, { paddingTopLeft: [sz.x * 0.06, sz.y * 0.32], paddingBottomRight: [sz.x * 0.06, sz.y * 0.05], maxZoom: 14, animate: true });
+  } else {
+    map.fitBounds(bounds, { padding: [40, 170], maxZoom: 14, animate: true });
+  }
 }
 
 // ── Start: boundaries + saved turnout together, then artwork, then check for newer data
